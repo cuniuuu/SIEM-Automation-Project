@@ -76,3 +76,5 @@ python main.py
 
 Để GitHub Actions có thể giao tiếp với Kibana Server đang chạy tại Local, bạn cần một Public URL.
 - Giải pháp: Có thể sử dụng Ngrok hoặc Cloudflare Tunnel tạm thời nếu chưa có domain để expose port Kibana ra ngoài Internet một cách an toàn mà không cần mở Port trên Router.
+
+Test mini

@@ -201,7 +201,7 @@ class SOCXCommand(ctk.CTk):
     def browse_data(self):
         choice = messagebox.askyesnocancel("Data Type", "FOLDER (Yes) / FILE (No)?")
         if choice is None: return
-        path = filedialog.askdirectory() if choice else filedialog.askopenfilename(filetypes=[("Sigma Rules", "*.yml *.yaml")])
+        path = filedialog.askdirectory() if choice else filedialog.askopenfilename(filetypes=[("Sigma Rules", "*.yml *.json")])
         if path:
             self.selected_path, self.is_folder = path, choice
             self.lbl_path.configure(text=f"{'DIR' if choice else 'FILE'}: {os.path.basename(path).upper()}", text_color=COLOR_ACCENT)
@@ -256,7 +256,7 @@ class SOCXCommand(ctk.CTk):
             if self.is_folder:
                 for root, _, files in os.walk(self.selected_path):
                     for file in files:
-                        if file.endswith(('.yml', '.yaml')):
+                        if file.endswith(('.yml', '.json')):
                             rel = os.path.relpath(root, self.selected_path)
                             dest = os.path.join(target, rel)
                             if not os.path.exists(dest): os.makedirs(dest)

@@ -1,0 +1,15 @@
+{
+  "rule_id": "threshold-windows-brute-force",
+  "type": "threshold",
+  "language": "kuery",
+  "name": "Custom Brute-force Login Attempts (>50 Failed)",
+  "description": "Phát hiện đăng nhập lỗi quá 50 lần từ một IP nguồn",
+  "query": "event.category: \"authentication\" and event.outcome: \"failure\"",
+  "threshold": {
+    "field": ["source.ip"],
+    "value": 50
+  },
+  "index": ["winlogbeat-*", "logs-endpoint.events.*"],
+  "severity": "high",
+  "risk_score": 70
+}

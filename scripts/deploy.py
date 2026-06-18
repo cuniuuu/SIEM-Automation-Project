@@ -92,8 +92,10 @@ def append_custom_json_rules(deprecated_ids):
                 if not rule: continue
                 
                 # Bắt buộc ép cấu hình đồng bộ với hệ thống Real-time
-                rule['interval'] = "1m"
-                rule['from'] = "now-120s"
+                if 'interval' not in rule:
+                    rule['interval'] = "1m"
+                if 'from' not in rule:
+                    rule['from'] = "now-120s"
                 
                 # Check trạng thái deprecated nếu file JSON có định nghĩa hoặc map ID
                 kibana_id = str(rule.get('id', '')).lower()

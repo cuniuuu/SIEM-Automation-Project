@@ -7,7 +7,7 @@
   "query": "event.category: \"authentication\" and event.outcome: \"failure\" and winlog.event_data.SubStatus: \"0xc0000064\"",
   "threshold": {
     "field": ["source.ip"],
-    "value": 15
+    "value": 14
   },
   "index": ["winlogbeat-*", "logs-endpoint.events.*"],
   "severity": "high",

@@ -4,7 +4,7 @@
   "language": "kuery",
   "name": "Custom Brute-force Login Attempts (>50 Failed)",
   "description": "Phát hiện đăng nhập lỗi quá 50 lần từ một IP nguồn",
-  "query": "event.category: \"authentication\" and event.outcome: \"failure\"",
+  "query": "event.code: \"4625\"",
   "threshold": {
     "field": ["source.ip"],
     "value": 50

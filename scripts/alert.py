@@ -97,29 +97,27 @@ class AlertMonitor:
                         rule_id = _src.get('kibana.alert.rule.rule_id') or ""
 
                         # ─── PHÂN TÁCH RIÊNG CHO TRƯỜNG HỢP BRUTEFORCE THRESHOLD ───
-                        if rule_id == "threshold-windows-invalid-user-brute-force" or _src.get('kibana.alert.rule.type') == "threshold":                            
-                            # Thu thập thông tin IP và số lượng từ bộ đếm Threshold trước
-                            terms = _src.get('kibana.alert.threshold_result', {}).get('terms', [])
-                            t_count = _src.get('kibana.alert.threshold_result', {}).get('count') or 0
-                            attacker_ip = terms[0].get('value') if terms else (_src.get('source.ip') or "Unknown IP")
-                            
-                            evidence = f"Attacker IP: {attacker_ip} (Threshold Count: {t_count})"
-                            proc_name = "lsass.exe / Giao thức: RDP-SMB"
+                        terms = _src.get('kibana.alert.threshold_result', {}).get('terms', [])
+                        t_count = _src.get('kibana.alert.threshold_result', {}).get('count') or 0
+                        attacker_ip = terms[0].get('value') if terms else (_src.get('source.ip') or "Unknown IP")
+                        
+                        # Gán thông tin bằng chứng hiển thị trực quan lên Telegram
+                        evidence = f"Attacker IP: {attacker_ip} (Threshold Count: {t_count})"
+                        proc_name = "lsass.exe / Giao thức: RDP-SMB"
 
-                            # KIỂM TRA NGỮ CẢNH: Xác định xem có nhắm vào 1 user cố định hay không
-                            # Tìm trong các trường có khả năng chứa user của tài liệu alert gốc
-                            target_user = _src.get('user', {}).get('name') or \
-                                          _src.get('winlog', {}).get('user', {}).get('name')
+                        # ==============================================================================
+                        # NHÁNH 1: ĐỘC QUYỀN CHO RULE INVALID USER (RULE 2)
+                        # ==============================================================================
+                        if rule_id == "threshold-windows-invalid-user-brute-force":
+                            user_name = "Multiple Invalid Users"
 
-                            # Nếu đây là luật phát hiện Invalid User cụ thể (Rule 2), ép hiển thị Multiple
-                            if rule_id == "threshold-windows-invalid-user-brute-force":
-                                user_name = "Multiple Invalid Users"
-                            else:
-                                # Nếu là luật Brute-force chung (Rule 1) và tìm được user cụ thể bị nhắm tới
-                                if target_user and target_user != "Unknown":
-                                    user_name = f"Single Target: {target_user}"
-                                else:
-                                    user_name = "Multiple Users / Generic Target"
+                        # ==============================================================================
+                        # NHÁNH 2: ĐỘC QUYỀN CHO RULE CUSTOM GENERIC BRUTE-FORCE (RULE 1)
+                        # ==============================================================================
+                        elif rule_id == "threshold-windows-brute-force":
+                            # Dựa theo dữ liệu Dev Tools: Payload không chứa thông tin user thô.
+                            # Hiển thị chính xác dưới dạng nhóm gom cụm thực thể dựa trên IP nguồn.
+                            user_name = f"Aggregated Group ({attacker_ip})"
                         
                         # ─── GIỮ NGUYÊN TOÀN BỘ LOGIC CŨ CHO CÁC TRƯỜNG HỢP KHÁC ───
                         else:

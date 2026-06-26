@@ -94,15 +94,44 @@ class AlertMonitor:
                         timestamp = _src['@timestamp']
                         
                         rule_name = _src.get('kibana.alert.rule.name') or "Security Alert"
-                        user_name = _src.get('user', {}).get('name') or \
-                                    _src.get('winlog', {}).get('user', {}).get('name') or "Unknown"
-                        
-                        evidence = _src.get('powershell', {}).get('file', {}).get('script_block_text') or \
-                                   _src.get('process', {}).get('command_line') or \
-                                   _src.get('source', {}).get('ip') or \
-                                   _src.get('host', {}).get('ip') or "N/A"
+                        rule_id = _src.get('kibana.alert.rule.rule_id') or ""
 
-                        proc_name = _src.get('process', {}).get('name') or "N/A"
+                        # ─── PHÂN TÁCH RIÊNG CHO TRƯỜNG HỢP BRUTEFORCE THRESHOLD ───
+                        terms = _src.get('kibana.alert.threshold_result', {}).get('terms', [])
+                        t_count = _src.get('kibana.alert.threshold_result', {}).get('count') or 0
+                        attacker_ip = terms[0].get('value') if terms else (_src.get('source.ip') or "Unknown IP")
+                        
+                        # Gán thông tin bằng chứng hiển thị trực quan lên Telegram
+                        evidence = f"Attacker IP: {attacker_ip} (Threshold Count: {t_count})"
+                        proc_name = "lsass.exe / Giao thức: RDP-SMB"
+
+                        # ==============================================================================
+                        # NHÁNH 1: ĐỘC QUYỀN CHO RULE INVALID USER (RULE 2)
+                        # ==============================================================================
+                        if rule_id == "threshold-windows-invalid-user-brute-force":
+                            user_name = "Multiple Invalid Users"
+
+                        # ==============================================================================
+                        # NHÁNH 2: ĐỘC QUYỀN CHO RULE CUSTOM GENERIC BRUTE-FORCE (RULE 1)
+                        # ==============================================================================
+                        elif rule_id == "threshold-windows-brute-force":
+                            # Dựa theo dữ liệu Dev Tools: Payload không chứa thông tin user thô.
+                            # Hiển thị chính xác dưới dạng nhóm gom cụm thực thể dựa trên IP nguồn.
+                            user_name = f"Aggregated Group ({attacker_ip})"
+                        
+                        # ─── GIỮ NGUYÊN TOÀN BỘ LOGIC CŨ CHO CÁC TRƯỜNG HỢP KHÁC ───
+                        else:
+                            user_name = _src.get('user', {}).get('name') or \
+                                        _src.get('winlog', {}).get('user', {}).get('name') or "Unknown"
+                            
+                            evidence = _src.get('powershell', {}).get('file', {}).get('script_block_text') or \
+                                       _src.get('process', {}).get('command_line') or \
+                                       _src.get('registry', {}).get('path') or \
+                                       _src.get('source.ip') or \
+                                       _src.get('host.name') or "N/A"
+
+                            proc_name = _src.get('process', {}).get('name') or "N/A"
+
                         fingerprint = f"{rule_name}|{user_name}|{evidence}"
 
                         if fingerprint not in aggregated_alerts:
@@ -125,7 +154,10 @@ class AlertMonitor:
                         _s = alert["source"]
                         count = alert["count"]
                         risk_score = _s.get('kibana.alert.rule.risk_score') or 0
-                        pp_name = _s.get('process', {}).get('parent', {}).get('name') or "N/A"
+                        
+                        # Điều hướng lấy tên Parent Process hợp lý
+                        pp_name = _s.get('process', {}).get('parent', {}).get('name') or \
+                                  ("NT AUTHORITY\\SYSTEM" if _s.get('kibana.alert.rule.type') == "threshold" else "N/A")
 
                         icon = "🔴" if risk_score >= 70 else "🟡" if risk_score >= 40 else "🔵"
 
@@ -136,7 +168,7 @@ class AlertMonitor:
                         msg = (f"{icon} <b>{self.ENV_LABEL} RISK ALERT{attempt_str}</b>\n"
                                f"Risk Score: <code>{risk_score}</code>\n"
                                f"━━━━━━━━━━━━━━━━━━━━━\n"
-                               f"- Time: <code>{local_time}</code> | User: <code>{alert['user']}</code>\n"
+                               f"- Time: <code>{local_time}</code> | User/Target: <code>{alert['user']}</code>\n"
                                f"- Rule: <i>{alert['rule']}</i>\n"
                                f"─────────────────────\n"
                                f"- Parent: <code>{pp_name.upper()}</code>\n"
@@ -147,6 +179,7 @@ class AlertMonitor:
                         self.send_telegram(msg)
                         for aid in alert["ids"]:
                             self.sent_alerts_cache.append(aid)
+                            
                     last_hit_ts_str = hits[-1]['_source']['@timestamp']
                     last_hit_dt = parser.isoparse(last_hit_ts_str)
                     safety_checkpoint = last_hit_dt - timedelta(seconds=15)

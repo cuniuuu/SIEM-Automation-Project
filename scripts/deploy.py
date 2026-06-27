@@ -1,162 +1,176 @@
-import subprocess, requests, sys, io, os, shutil, yaml, json
+import argparse
+import json
+import os
+import sys
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+import requests
 
-# --- CONFIGURATION ---
-URL = os.getenv('KIBANA_URL') 
-USER = os.getenv('ELASTIC_USERNAME')
-PASS = os.getenv('ELASTIC_PASSWORD')
-SPACE_ID = os.getenv('KIBANA_SPACE')
+from rule_bundle import (
+    build_bundle,
+    detect_drift,
+    export_rule_backup,
+    fetch_kibana_rules,
+    restore_rule_from_backup,
+    scan_rule_sources,
+)
 
-RULES_INPUT = 'rules/'
-NDJSON_OUTPUT = 'rules/windows_rules.ndjson'
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
-def get_sigma_path():
-    sigma_path = shutil.which("sigma")
-    if sigma_path: return f'"{sigma_path}"'
-    sigma_exe = os.path.join(os.path.dirname(sys.executable), "Scripts", "sigma.exe")
-    return f'"{sigma_exe}"' if os.path.exists(sigma_exe) else "sigma"
+URL = os.getenv("KIBANA_URL")
+USER = os.getenv("ELASTIC_USERNAME")
+PASS = os.getenv("ELASTIC_PASSWORD")
+SPACE_ID = os.getenv("KIBANA_SPACE", "default")
 
-def process_rules():
-    print("[*] Scan YAML files for deprecated status...")
-    deprecated_ids = set()
-    for root, _, files in os.walk(RULES_INPUT):
-        for file in files:
-            if not file.endswith(('.yml', '.yaml')): continue   
-            path = os.path.join(root, file)
-            try:
-                with open(path, 'r', encoding='utf-8') as f:
-                    data = yaml.safe_load(f)
-                if not data: continue
-                
-                rule_id = data.get('id')
-                if rule_id and str(data.get('status', '')).lower() == 'deprecated':
-                    deprecated_ids.add(str(rule_id).lower())
-                    print(f"  [-] Registered Deprecated ID (Sigma): {rule_id} ({file})")
-                        
-            except Exception as e:
-                print(f"  [-] Error reading {file}: {e}")
-    return deprecated_ids
+RULES_INPUT = "rules/"
+NDJSON_OUTPUT = "rules/windows_rules.ndjson"
+BUNDLE_BACKUP_DIR = "trash/bundles"
 
-def patch_ndjson(deprecated_ids):
-    print(f"[*] Patching NDJSON from Sigma-cli for real-time monitoring (interval: 1m)...")
-    
-    if not os.path.exists(NDJSON_OUTPUT):
-        print("[-] NDJSON file not found to patch.")
-        return False
-        
-    patched_lines = []
 
-    with open(NDJSON_OUTPUT, 'r', encoding='utf-8') as f:
-        for line in f:
-            if not line.strip(): continue
-            try:
-                rule = json.loads(line)
-                
-                # Ép cấu hình chạy Real-time khắt khe của SOC cho Sigma Rules
-                rule['interval'] = "1m"
-                rule['from'] = "now-120s"
-                
-                kibana_id = str(rule.get('id', '')).lower()
-                kibana_rule_id = str(rule.get('rule_id', '')).lower()
-                
-                if kibana_id in deprecated_ids or kibana_rule_id in deprecated_ids:
-                    rule['enabled'] = False
-                    print(f"  [!] Disabled patched rule: {rule.get('name')}")
-                
-                patched_lines.append(json.dumps(rule, ensure_ascii=False))
-            except Exception as e:
-                print(f"  [-] Line parsing error: {e}")
+def _base_api():
+    if not URL:
+        raise ValueError("Missing KIBANA_URL")
+    return URL.rstrip("/")
 
-    with open(NDJSON_OUTPUT, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(patched_lines) + '\n')
-    print("[+] Patching Sigma rules completed.")
-    return True
 
-def append_custom_json_rules(deprecated_ids):
-    print("[*] Scanning and appending Native JSON Threshold Rules...")
-    custom_lines = []
-    
-    for root, _, files in os.walk(RULES_INPUT):
-        for file in files:
-            if not file.endswith('.json'): continue
-            path = os.path.join(root, file)
-            
-            # Bỏ qua chính file output nếu bạn lỡ đặt trùng trong thư mục rules
-            if os.path.abspath(path) == os.path.abspath(NDJSON_OUTPUT): continue
-            
-            try:
-                with open(path, 'r', encoding='utf-8') as f:
-                    rule = json.load(f)
-                
-                if not rule: continue
-                
-                # Bắt buộc ép cấu hình đồng bộ với hệ thống Real-time
-                if 'interval' not in rule:
-                    rule['interval'] = "1m"
-                if 'from' not in rule:
-                    rule['from'] = "now-120s"
-                
-                # Check trạng thái deprecated nếu file JSON có định nghĩa hoặc map ID
-                kibana_id = str(rule.get('id', '')).lower()
-                kibana_rule_id = str(rule.get('rule_id', '')).lower()
-                if str(rule.get('status', '')).lower() == 'deprecated' or kibana_id in deprecated_ids or kibana_rule_id in deprecated_ids:
-                    rule['enabled'] = False
-                    print(f"  [-] Native JSON Rule Target OFF (deprecated): {file}")
-                
-                custom_lines.append(json.dumps(rule, ensure_ascii=False))
-                print(f"  [+] Integrated Native JSON Rule: {rule.get('name')} ({file})")
-                
-            except Exception as e:
-                print(f"  [-] Error processing JSON rule {file}: {e}")
-                
-    if custom_lines:
-        # Ghi nối tiếp (Mode 'a' - Append) vào file NDJSON hiện tại
-        with open(NDJSON_OUTPUT, 'a', encoding='utf-8') as f:
-            f.write('\n'.join(custom_lines) + '\n')
-        print(f"[+] Successfully appended {len(custom_lines)} custom JSON rules to NDJSON.")
-    else:
-        print("[*] No custom JSON rules found to append.")
+def _auth():
+    return (USER, PASS)
+
+
+def _import_api():
+    return f"{_base_api()}{'' if SPACE_ID == 'default' else f'/s/{SPACE_ID}'}/api/detection_engine/rules/_import"
+
+
+def _find_api():
+    return f"{_base_api()}{'' if SPACE_ID == 'default' else f'/s/{SPACE_ID}'}/api/detection_engine/rules/_find"
+
+
+def build_and_save_bundle():
+    print("[*] Building merged NDJSON bundle...")
+    source_rules, _, materialized_rules = build_bundle(RULES_INPUT, NDJSON_OUTPUT)
+    print(f"[+] Bundle ready: {len(materialized_rules)} imported rules from {len(source_rules)} sources -> {NDJSON_OUTPUT}")
+    return materialized_rules
+
 
 def deploy():
-    # 1. Quét trạng thái từ file nguồn YAML trước
-    dep_ids = process_rules()
-    
-    # 2. Biên dịch thông qua Sigma-cli (Tạo mới file NDJSON chứa các rule gốc của Sigma)
-    cmd = f'{get_sigma_path()} convert -t lucene -p ecs_windows -f siem_rule_ndjson "{RULES_INPUT}" --skip-unsupported -o "{NDJSON_OUTPUT}"'
-    print("[*] Converting Sigma rules via sigma-cli...")
-    
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"[-] Conversion failed. Error: {result.stderr}")
-        return
-    
-    # 3. Tiến hành tinh chỉnh thuộc tính của nhóm rule vừa convert từ Sigma
-    if not patch_ndjson(dep_ids):
-        return
-        
-    # 4. ĐỌC VÀ NỐI THẲNG THRESHOLD JSON RULES VÀO CUỐI FILE NDJSON
-    append_custom_json_rules(dep_ids)
-        
-    # 5. Thực hiện API Request để đẩy gói tổng hợp lên Kibana
-    api = f"{URL}{'' if SPACE_ID == 'default' else f'/s/{SPACE_ID}'}/api/detection_engine/rules/_import"
-    print(f"[*] Deploying integrated NDJSON package to Space [{SPACE_ID}]...")
-    
-    try:
-        with open(NDJSON_OUTPUT, 'rb') as f:
+    source_rules = build_and_save_bundle()
+    print(f"[*] Deploying bundle to Space [{SPACE_ID}]...")
+    with open(NDJSON_OUTPUT, "rb") as f:
+        res = requests.post(
+            _import_api(),
+            headers={"kbn-xsrf": "true"},
+            auth=_auth(),
+            files={"file": ("rules.ndjson", f, "application/x-ndjson")},
+            params={"overwrite": "true"},
+            timeout=120,
+            verify=False,
+        )
+    if res.status_code == 200:
+        print(f"[+] Deployed successfully. Rules processed: {len(source_rules)}")
+    else:
+        print(f"[-] Deploy failed ({res.status_code}): {res.text}")
+
+
+def synchronize():
+    source_rules = build_and_save_bundle()
+    kibana_rules = fetch_kibana_rules(_base_api(), _auth(), SPACE_ID)
+    report = detect_drift(source_rules, kibana_rules)
+
+    print(f"[*] Sync report for Space [{SPACE_ID}]")
+    print(f"    Repo rules:   {report['summary']['repo']}")
+    print(f"    Kibana rules: {report['summary']['kibana']}")
+    print(f"    Only in repo:  {len(report['only_in_repo'])}")
+    print(f"    Only in Kibana:{len(report['only_in_kibana'])}")
+    print(f"    Changed:       {len(report['changed'])}")
+
+    if report["only_in_repo"]:
+        print("[*] Rules present in repo but missing in Kibana:")
+        for rid in report["only_in_repo"]:
+            print(f"    + {rid}")
+    if report["only_in_kibana"]:
+        print("[*] Rules present in Kibana but missing in repo:")
+        for rid in report["only_in_kibana"]:
+            print(f"    - {rid}")
+    if report["changed"]:
+        print("[*] Field-level drift:")
+        for item in report["changed"]:
+            print(f"    * {item['rule_id']} :: {item['name']}")
+            for diff in item["diffs"]:
+                print(f"        - {diff['field']}: repo={diff['local']!r} | kibana={diff['kibana']!r}")
+
+    if not report["only_in_repo"] and not report["only_in_kibana"] and not report["changed"]:
+        print("[+] Repo and Kibana are synchronized.")
+    else:
+        print("[!] Drift detected. Review the diff above before deploying.")
+        print("[*] Synchronizing repo state to Kibana...")
+        with open(NDJSON_OUTPUT, "rb") as f:
             res = requests.post(
-                api, 
-                headers={"kbn-xsrf": "true"}, 
-                auth=(USER, PASS),
-                files={'file': ('rules.ndjson', f, 'application/x-ndjson')},
-                params={"overwrite": "true"}
+                _import_api(),
+                headers={"kbn-xsrf": "true"},
+                auth=_auth(),
+                files={"file": ("rules.ndjson", f, "application/x-ndjson")},
+                params={"overwrite": "true"},
+                timeout=120,
+                verify=False,
             )
-        if res.status_code == 200:
-            print("SUCCESS! All Sigma and Native Threshold JSON rules deployed and optimized.")
+        if res.status_code != 200:
+            print(f"[-] Sync failed ({res.status_code}): {res.text}")
+            return
+        print("[+] Sync import completed. Re-checking state...")
+        refreshed = detect_drift(source_rules, fetch_kibana_rules(_base_api(), _auth(), SPACE_ID))
+        if not refreshed["only_in_repo"] and not refreshed["only_in_kibana"] and not refreshed["changed"]:
+            print("[+] Synchronization verified.")
         else:
-            print(f"ERROR ({res.status_code}): {res.text}")
-    except Exception as e:
-        print(f"[-] Connection to Kibana failed: {e}")
+            print("[!] Synchronization finished, but some drift still remains.")
+
+
+def detect():
+    source_rules = build_and_save_bundle()
+    kibana_rules = fetch_kibana_rules(_base_api(), _auth(), SPACE_ID)
+    report = detect_drift(source_rules, kibana_rules)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+def restore(rule_id=None, backup_file=None):
+    if not backup_file and not rule_id:
+        raise ValueError("restore requires either --rule-id or --backup-file")
+
+    if backup_file:
+        dest = restore_rule_from_backup(backup_file, RULES_INPUT)
+        print(f"[+] Restored from backup: {dest}")
+        return
+
+    candidate = os.path.join(BUNDLE_BACKUP_DIR, rule_id, f"{rule_id}.json")
+    if not os.path.exists(candidate):
+        raise ValueError(f"Backup not found for rule: {rule_id}")
+
+    dest = restore_rule_from_backup(candidate, RULES_INPUT)
+    print(f"[+] Restored rule from bundle backup: {dest}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="SIEM rule bundle operations")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("deploy", help="Build bundle and import to Kibana")
+    sub.add_parser("sync", help="Compare repo against Kibana with detailed drift")
+    sub.add_parser("detect", help="Output machine-readable drift report")
+
+    restore_parser = sub.add_parser("restore", help="Restore a single rule from backup or snapshot")
+    restore_parser.add_argument("--rule-id", help="Rule ID to back up from repo")
+    restore_parser.add_argument("--backup-file", help="Restore a specific backup JSON file")
+
+    args = parser.parse_args()
+
+    if args.command == "deploy":
+        deploy()
+    elif args.command == "sync":
+        synchronize()
+    elif args.command == "detect":
+        detect()
+    elif args.command == "restore":
+        restore(args.rule_id, args.backup_file)
+
 
 if __name__ == "__main__":
-    deploy()
+    main()

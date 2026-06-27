@@ -148,8 +148,9 @@ class SOCXCommand(ctk.CTk):
                           command=lambda s=status: self.logic.set_status(s, self.tree, self.update_ui_list)).pack(side="left", padx=2)
 
         ctk.CTkButton(bot, text="DELETE", width=80, height=35, fg_color="#6C757D", font=("Segoe UI", 11, "bold"), command=lambda: self.logic.delete(self.tree, self.mode_var.get(), self.update_ui_list)).pack(side="left", padx=(10, 5))
-        ctk.CTkButton(bot, text="RESTORE", width=80, height=35, fg_color="transparent", border_width=1, text_color="#65676B", font=("Segoe UI", 11, "bold"), command=lambda: self.logic.restore(self.mode_var.get(), self.update_ui_list)).pack(side="left")
-        ctk.CTkButton(bot, text="SYNC AUDIT", width=100, height=35, fg_color="#007AFF", font=("Segoe UI", 11, "bold"), command=lambda: self.logic.sync_audit()).pack(side="left", padx=10)
+        ctk.CTkButton(bot, text="RESTORE", width=80, height=35, fg_color="transparent", border_width=1, text_color="#65676B", font=("Segoe UI", 11, "bold"), command=lambda: self.logic.restore(self.mode_var.get(), self.update_ui_list)).pack(side="left", padx=(8, 0))
+        ctk.CTkButton(bot, text="DETECT", width=90, height=35, fg_color="#5C6BC0", font=("Segoe UI", 11, "bold"), command=lambda: self.logic.sync_audit()).pack(side="left", padx=10)
+        ctk.CTkButton(bot, text="SYNC", width=80, height=35, fg_color="#007AFF", font=("Segoe UI", 11, "bold"), command=lambda: self.logic.sync_rules()).pack(side="left", padx=2)
 
         self.drop = ctk.CTkFrame(container, fg_color="#FFFFFF", border_width=1, border_color="#E4E6EB")
         self.tree = ttk.Treeview(self.drop, columns=("Status", "Title"), show="headings", height=8)

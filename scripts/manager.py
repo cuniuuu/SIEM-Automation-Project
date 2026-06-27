@@ -7,6 +7,13 @@ import subprocess
 import threading
 from tkinter import messagebox, filedialog
 
+from rule_bundle import (
+    build_bundle,
+    detect_drift,
+    fetch_kibana_rules,
+    scan_rule_sources,
+)
+
 class RuleManager:
     def __init__(self, rules_dir, log_func):
         self.rules_dir = rules_dir
@@ -142,85 +149,82 @@ class RuleManager:
 
     def sync_audit(self):
         def _task():
-            self.load_rules_data()
-            _, space_id = self._detect_environment()
-            host = os.getenv('KIBANA_HOST', '').rstrip('/')
-            api = f"{host}{'' if space_id == 'default' else f'/s/{space_id}'}/api/detection_engine/rules/_find"
-            
             try:
+                self.load_rules_data()
+                _, space_id = self._detect_environment()
+                host = os.getenv('KIBANA_HOST', '').rstrip('/')
+                api_base = host
                 self.log_func("[*] Đang đối soát dữ liệu Repo và Kibana...")
-                
-                kibana_ids = set()
-                page = 1
-                per_page = 100
-                
-                while True:
-                    res = requests.get(
-                        api, 
-                        auth=(os.getenv('ELASTIC_USER'), os.getenv('ELASTIC_PASS')),
-                        headers={"kbn-xsrf": "true"}, 
-                        params={"page": page, "per_page": per_page}, 
-                        verify=False, 
-                        timeout=20
-                    )
-                    if res.status_code != 200:
-                        self.log_func(f"[-] Lỗi kết nối API Kibana (Page {page}): HTTP {res.status_code}")
-                        return
-                        
-                    payload = res.json()
-                    kibana_data = payload.get('data', [])
-                    if not kibana_data:
-                        break
-                    
-                    for r in kibana_data:
-                        rid = r.get('rule_id') or r.get('id')
-                        if rid:
-                            kibana_ids.add(rid)
-                    
-                    total = payload.get('total', 0)
-                    if page * per_page >= total:
-                        break
-                    page += 1
+                _, _, local_rules = build_bundle(self.rules_dir, os.path.join(self.trash_dir, "preview.ndjson"))
+                kibana_rules = fetch_kibana_rules(api_base, (os.getenv('ELASTIC_USER'), os.getenv('ELASTIC_PASS')), space_id)
+                report = detect_drift(local_rules, kibana_rules)
 
-                repo_map = {}
-                for r in self.all_rules:
-                    try:
-                        rid, _, _ = self._parse_rule_file(r['path'])
-                        if rid:
-                            repo_map[rid] = r['file']
-                    except:
-                        continue
-                        
-                repo_ids = set(repo_map.keys())
-                only_in_repo = repo_ids - kibana_ids
-                only_in_kibana = kibana_ids - repo_ids
-                
-                self.log_func(f"[!] Thống kê chuẩn: Repo({len(repo_ids)}) | Kibana({len(kibana_ids)})")
-                
-                if not only_in_repo and not only_in_kibana:
+                self.log_func(f"[!] Thống kê chuẩn: Repo({report['summary']['repo']}) | Kibana({report['summary']['kibana']})")
+                if not report["only_in_repo"] and not report["only_in_kibana"] and not report["changed"]:
                     self.log_func("[+] Đồng bộ hoàn toàn 100%")
-                else:
-                    self.log_func(f"--- CHI TIẾT SAI LỆCH ({len(only_in_repo) + len(only_in_kibana)}) ---")
-                    if only_in_repo:
-                        self.log_func(f"[*] Có ở Repo nhưng chưa có trên Kibana ({len(only_in_repo)}):")
-                        for rid in only_in_repo:
-                            self.log_func(f"  + {repo_map[rid]}")
-                    if only_in_kibana:
-                        self.log_func(f"[*] Có trên Kibana nhưng đã mất trong Repo ({len(only_in_kibana)}):")
-                        for rid in only_in_kibana:
-                            self.log_func(f"  - ID: {rid}")
+                    return
+
+                self.log_func(f"--- CHI TIẾT SAI LỆCH ({len(report['only_in_repo']) + len(report['only_in_kibana']) + len(report['changed'])}) ---")
+                if report["only_in_repo"]:
+                    self.log_func(f"[*] Có ở Repo nhưng chưa có trên Kibana ({len(report['only_in_repo'])}):")
+                    for rid in report["only_in_repo"]:
+                        self.log_func(f"  + {rid}")
+                if report["only_in_kibana"]:
+                    self.log_func(f"[*] Có trên Kibana nhưng đã mất trong Repo ({len(report['only_in_kibana'])}):")
+                    for rid in report["only_in_kibana"]:
+                        self.log_func(f"  - ID: {rid}")
+                if report["changed"]:
+                    self.log_func(f"[*] Rule thay đổi chi tiết ({len(report['changed'])}):")
+                    for item in report["changed"]:
+                        self.log_func(f"  * {item['rule_id']} :: {item['name']}")
+                        for diff in item["diffs"]:
+                            self.log_func(f"      - {diff['field']}: repo={diff['local']!r} | kibana={diff['kibana']!r}")
             except Exception as e:
                 self.log_func(f"[-] Lỗi đối soát hệ thống: {str(e)}")
                 
         threading.Thread(target=_task, daemon=True).start()
 
+    def sync_rules(self):
+        def _task():
+            try:
+                self.log_func("[*] Building bundle for synchronization...")
+                bundle_path = os.path.join(self.trash_dir, "sync_preview.ndjson")
+                _, _, local_rules = build_bundle(self.rules_dir, bundle_path)
+                _, space_id = self._detect_environment()
+                host = os.getenv('KIBANA_HOST', '').rstrip('/')
+                api = f"{host}{'' if space_id == 'default' else f'/s/{space_id}'}/api/detection_engine/rules/_import"
+
+                with open(bundle_path, "rb") as f:
+                    res = requests.post(
+                        api,
+                        auth=(os.getenv('ELASTIC_USER'), os.getenv('ELASTIC_PASS')),
+                        headers={"kbn-xsrf": "true"},
+                        files={'file': ('rules.ndjson', f, 'application/x-ndjson')},
+                        params={"overwrite": "true"},
+                        verify=False,
+                        timeout=120
+                    )
+
+                if res.status_code != 200:
+                    self.log_func(f"[-] Sync failed: HTTP {res.status_code} - {res.text}")
+                    return
+
+                self.log_func(f"[+] Sync completed. Rules processed: {len(local_rules)}")
+                self.sync_audit()
+            except Exception as e:
+                self.log_func(f"[-] Sync error: {str(e)}")
+
+        threading.Thread(target=_task, daemon=True).start()
+
     def restore(self, mode, refresh_callback):
         p = filedialog.askdirectory(initialdir=self.trash_dir) if mode == "Folder Mode" else filedialog.askopenfilename(initialdir=self.trash_dir, filetypes=[("Detection Rules", "*.yml *.yaml *.json")])
-        if not p: 
+        if not p:
             return
         self.log_func(f"[*] Restoring {os.path.basename(p)}...")
         try:
             dest = os.path.join(self.rules_dir, os.path.basename(p).replace("_dir", ""))
+            if os.path.exists(dest):
+                shutil.rmtree(dest) if os.path.isdir(dest) else os.remove(dest)
             shutil.move(p, dest)
             self.log_func(f"[+] Restored.")
             refresh_callback()

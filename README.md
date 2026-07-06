@@ -1,4 +1,4 @@
-![image](Diagram/Luong_chi_tiet.png)
+![image](Diagram/Phan_luong_he_thong.png)
 
 ## SIEM Automation
 Hệ thống quản lý Sigma Rules dựa trên mô hình DaC và giám sát cảnh báo tập trung cho ELK Stack thông qua giao diện GUI và tự động hóa CI/CD.
@@ -54,6 +54,17 @@ INDEX_DEV=.internal.alerts-security.alerts-detection-dev-*
 KIBANA_SPACE_PROD=default
 KIBANA_SPACE_DEV=detection-dev
 ```
+
+Theo chu kì khoảng 1 tháng hoặc hết dung lượng lưu trữ thì phần INDEX_DEV/PROD sẽ tiến hành nhảy sang một INDEX mới với số chỉ tăng dần từ 000001, 000002, .... 
+
+Vì đây là input cho Module Alert-Monitor thực hiện truy vấn. Nên ta có thể dùng câu lệnh sau để truy vấn chính xác xem ELK đang lưu trữ các alert tại INDEX nào.
+
+```
+GET /_cat/indices/.internal.alerts-security.alerts*?v&s=index:desc
+```
+
+Câu lệnh trên được thực hiện tại Dev-Tools được tích hợp sẵn trên giao diện Kibana.
+
 - Cấu hình GitHub Secrets
 
 Để GitHub Actions có thể deploy rule lên Kibana, bạn cần cấu hình GitHub Secrets trong phần cài đặt repo của bạn:
@@ -65,12 +76,14 @@ KIBANA_SPACE_DEV=detection-dev
 ```Bash
 python main.py
 ``` 
-2. Add Rules: Có thể tự viết hoặc có thể dùng nguồn có sẵn như SigmaHQ
+2. Nguồn dữ liệu đầu vào: Sigma rules, Threshold rules (json), ...
 
 3. Deploy
 
 - Sửa/Xóa/Cập nhật rule trên nhánh dev -> git push -> Kiểm tra kết quả trên Kibana Dev Space
 - Merge Pull Request sang main -> Hệ thống tự động đẩy rule lên Kibana Production.
+
+4. Thực nghiệm tấn công sinh cảnh báo với các rules đã được import sau đó tinh chỉnh sao cho phù hợp để giảm thiểu tối đa false positive
 
 ## Lưu ý quan trọng về Networking::
 

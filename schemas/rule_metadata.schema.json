@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.siem-automation/schemas/rule_metadata.schema.json",
+  "title": "SIEM Detection Rule Metadata",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "owner",
+    "status",
+    "severity",
+    "risk_score",
+    "data_sources",
+    "log_requirements",
+    "false_positive_scenarios",
+    "tuning_notes",
+    "response_playbook",
+    "validation",
+    "review"
+  ],
+  "properties": {
+    "owner": {
+      "type": "object",
+      "required": ["team", "primary_contact"],
+      "properties": {
+        "team": { "type": "string", "minLength": 1 },
+        "primary_contact": { "type": "string", "minLength": 1 },
+        "slack_channel": { "type": "string" }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "testing", "production", "deprecated"]
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"]
+    },
+    "risk_score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "attack": {
+      "type": "object",
+      "properties": {
+        "tactics": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "techniques": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "data_sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["product", "source", "required"],
+        "properties": {
+          "product": { "type": "string" },
+          "source": { "type": "string" },
+          "required": { "type": "boolean" },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "log_requirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["field", "why"],
+        "properties": {
+          "field": { "type": "string" },
+          "why": { "type": "string" },
+          "example": { "type": "string" }
+        }
+      }
+    },
+    "false_positive_scenarios": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "tuning_notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "triage": {
+      "type": "object",
+      "properties": {
+        "entities": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "priority_questions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "enrichment_queries": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "response_playbook": {
+      "type": "object",
+      "required": ["id", "mode"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "mode": {
+          "type": "string",
+          "enum": ["manual", "semi_auto", "auto"]
+        },
+        "auto_actions": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "required": ["test_strategy", "expected_outcome"],
+      "properties": {
+        "test_strategy": { "type": "string" },
+        "sample_log_path": { "type": "string" },
+        "expected_outcome": { "type": "string" },
+        "last_validated_at": { "type": "string", "format": "date" }
+      }
+    },
+    "review": {
+      "type": "object",
+      "required": ["reviewer", "last_reviewed_at", "review_cycle_days"],
+      "properties": {
+        "reviewer": { "type": "string" },
+        "last_reviewed_at": { "type": "string", "format": "date" },
+        "review_cycle_days": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "references_internal": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

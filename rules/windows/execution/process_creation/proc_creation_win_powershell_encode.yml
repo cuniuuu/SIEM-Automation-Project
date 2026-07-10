@@ -1,0 +1,94 @@
+title: Suspicious Execution of Powershell with Base64
+id: fb843269-508c-4b76-8b8d-88679db22ce7
+status: test
+description: Commandline to launch powershell with a base64 payload
+references:
+- https://github.com/redcanaryco/atomic-red-team/blob/f339e7da7d05f6057fdfcdd3742bfcf365fee2a9/atomics/T1059.001/T1059.001.md#atomic-test-20---powershell-invoke-known-malicious-cmdlets
+- https://unit42.paloaltonetworks.com/unit42-pulling-back-the-curtains-on-encodedcommand-powershell-attacks/
+- https://mikefrobbins.com/2017/06/15/simple-obfuscation-with-powershell-using-base64-encoding/
+author: frack113
+date: 2022-01-02
+modified: 2023-01-05
+tags:
+- attack.execution
+- attack.t1059.001
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    Image|endswith:
+    - \powershell.exe
+    - \pwsh.exe
+    CommandLine|contains:
+    - ' -e '
+    - ' -en '
+    - ' -enc '
+    - ' -enco'
+    - ' -ec '
+  filter_encoding:
+    CommandLine|contains: ' -Encoding '
+  filter_azure:
+    ParentImage|contains:
+    - C:\Packages\Plugins\Microsoft.GuestConfiguration.ConfigurationforWindows\
+    - \gc_worker.exe
+  condition: selection and not 1 of filter_*
+falsepositives:
+- Unknown
+level: medium
+x_metadata:
+  owner:
+    team: Detection Engineering
+    primary_contact: soc-detection@local
+    slack_channel: "#soc-detections"
+  status: testing
+  severity: medium
+  risk_score: 55
+  attack:
+    tactics:
+    - execution
+    techniques:
+    - T1059.001
+  data_sources:
+  - product: windows
+    source: process_creation
+    required: true
+    notes: CommandLine logging must be enabled.
+  log_requirements:
+  - field: process.command_line
+    why: Detect encoded PowerShell switches.
+    example: powershell.exe -enc ...
+  - field: process.parent.name
+    why: Support triage for parent-child process chain.
+  false_positive_scenarios:
+  - Administrative scripts using EncodedCommand.
+  tuning_notes:
+  - Exclude known management agents and approved automation hosts.
+  triage:
+    entities:
+    - host.name
+    - user.name
+    - process.command_line
+    priority_questions:
+    - Is the parent process expected for this user or host role?
+    - Did the same host spawn follow-on network or download activity?
+    enrichment_queries:
+    - Search same host and user for PowerShell execution over 24h.
+    - Retrieve parent and child process tree.
+  response_playbook:
+    id: windows-suspicious-powershell-response
+    mode: semi_auto
+    auto_actions:
+    - create_case
+    - notify_telegram
+  validation:
+    test_strategy: Replay malicious encoded PowerShell sample in dev index.
+    sample_log_path: samples/windows/execution/process_creation/powershell_encoded.json
+    expected_outcome: Rule triggers on encoded PowerShell invocation.
+    last_validated_at: 2026-07-10
+  review:
+    reviewer: lead.detection@local
+    last_reviewed_at: 2026-07-10
+    review_cycle_days: 30
+  references_internal:
+  - KB-DET-POWERSHELL-001

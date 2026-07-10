@@ -281,10 +281,16 @@ class SOCXCommand(ctk.CTk):
             self._show_progress(); self.btn_push.configure(state="disabled", text="SYNCING...")
             self.write_log("PATCHING METADATA & STATUS MAP...")        
             for cmd in [["git", "add", "."], ["git", "commit", "-m", msg], ["git", "push", "origin", "dev"]]:
-                subprocess.run(cmd, check=True, capture_output=True)
+                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
                 self.write_log(f"GIT: {' '.join(cmd)} - SUCCESS")
+                if result.stdout.strip():
+                    self.write_log(result.stdout.strip())
             self.write_log("CLOUD SYNC COMPLETE."); self.commit_input.delete(0, 'end'); self._on_focus_out(None)
-        except Exception as e: self.write_log(f"GIT ERR: {str(e)}")
+        except subprocess.CalledProcessError as e:
+            err_msg = (e.stderr or e.stdout or str(e)).strip()
+            self.write_log(f"GIT ERR: {err_msg}")
+        except Exception as e:
+            self.write_log(f"GIT ERR: {str(e)}")
         finally: self._hide_progress(); self.btn_push.configure(state="normal", text="GIT PUSH")
 
     def _side_btn(self, text, color, cmd):

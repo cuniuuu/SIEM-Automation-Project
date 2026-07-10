@@ -56,4 +56,57 @@ detection:
 falsepositives:
     - Unlikely
 level: high
+x_metadata:
+  owner:
+    team: Detection Engineering
+    primary_contact: soc-detection@local
+    slack_channel: "#soc-detections"
+  status: testing
+  severity: high
+  risk_score: 85
+  attack:
+    tactics:
+    - credential_access
+    techniques:
+    - T1003.001
+  data_sources:
+  - product: windows
+    source: process_creation
+    required: true
+    notes: Need rundll32 command line with comsvcs parameters.
+  log_requirements:
+  - field: process.command_line
+    why: Required to detect process dump invocation.
+  false_positive_scenarios:
+  - Rare forensic or support collection activity by trusted responders.
+  tuning_notes:
+  - Allowlist approved IR tooling paths if absolutely necessary.
+  triage:
+    entities:
+    - host.name
+    - user.name
+    - process.command_line
+    priority_questions:
+    - Was the target process LSASS or another sensitive process?
+    - Was a dump file created and accessed afterward?
+    enrichment_queries:
+    - Search for file creation of dump artifacts on the same host.
+    - Retrieve surrounding process tree for rundll32 execution.
+  response_playbook:
+    id: windows-process-dump-response
+    mode: semi_auto
+    auto_actions:
+    - create_case
+    - notify_telegram
+  validation:
+    test_strategy: Replay comsvcs-based dump simulation event.
+    sample_log_path: samples/windows/credential_access/process_creation/comsvcs_dump.json
+    expected_outcome: Rule triggers on rundll32 comsvcs dump pattern.
+    last_validated_at: 2026-07-10
+  review:
+    reviewer: lead.detection@local
+    last_reviewed_at: 2026-07-10
+    review_cycle_days: 21
+  references_internal:
+  - KB-DET-COMSVCS-001
 ##

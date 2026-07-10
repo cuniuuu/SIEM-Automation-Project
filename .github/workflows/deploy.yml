@@ -5,6 +5,10 @@ on:
     branches: [ "main", "dev" ]
     paths:
       - 'rules/**'
+      - 'schemas/**'
+      - 'templates/**'
+      - 'scripts/deploy.py'
+      - 'scripts/validate_rules.py'
 
 jobs:
   deploy:
@@ -20,12 +24,16 @@ jobs:
 
       - name: Install Tools
         run: |
-          pip install requests sigma-cli pyyaml
+          pip install requests sigma-cli pyyaml jsonschema
           sigma plugin install elasticsearch
 
       - name: Validate Sigma Rules (Security Gate cho Rule)
         run: |
           sigma check rules/
+
+      - name: Validate Rule Metadata
+        run: |
+          python scripts/validate_rules.py
 
       - name: Set Environment for Branch
         run: |

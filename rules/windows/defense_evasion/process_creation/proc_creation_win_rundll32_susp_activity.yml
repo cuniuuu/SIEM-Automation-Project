@@ -105,4 +105,56 @@ detection:
 falsepositives:
     - False positives depend on scripts and administrative tools used in the monitored environment
 level: medium
+x_metadata:
+  owner:
+    team: Detection Engineering
+    primary_contact: soc-detection@local
+    slack_channel: "#soc-detections"
+  status: testing
+  severity: medium
+  risk_score: 60
+  attack:
+    tactics:
+    - defense_evasion
+    techniques:
+    - T1218.011
+  data_sources:
+  - product: windows
+    source: process_creation
+    required: true
+    notes: Need full rundll32 command line.
+  log_requirements:
+  - field: process.command_line
+    why: Needed to assess suspicious rundll32 invocation patterns.
+  false_positive_scenarios:
+  - Certain legacy applications legitimately using rundll32.
+  tuning_notes:
+  - Build local allowlist for known vendor DLL invocations.
+  triage:
+    entities:
+    - host.name
+    - user.name
+    - process.command_line
+    priority_questions:
+    - Does the DLL path belong to a signed and expected application?
+    - Are there sibling LOLBIN or download behaviors nearby?
+    enrichment_queries:
+    - Search the invoked DLL path across the environment.
+  response_playbook:
+    id: windows-rundll32-suspicious-response
+    mode: semi_auto
+    auto_actions:
+    - create_case
+    - notify_telegram
+  validation:
+    test_strategy: Replay suspicious rundll32 sample commands in dev.
+    sample_log_path: samples/windows/defense_evasion/process_creation/rundll32_suspicious.json
+    expected_outcome: Rule triggers on suspicious rundll32 activity.
+    last_validated_at: 2026-07-10
+  review:
+    reviewer: lead.detection@local
+    last_reviewed_at: 2026-07-10
+    review_cycle_days: 30
+  references_internal:
+  - KB-DET-RUNDLL32-001
 ##

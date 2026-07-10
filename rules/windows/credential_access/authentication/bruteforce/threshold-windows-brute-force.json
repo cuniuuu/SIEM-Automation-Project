@@ -1,0 +1,83 @@
+{
+  "rule_id": "threshold-windows-brute-force",
+  "type": "threshold",
+  "language": "kuery",
+  "name": "Custom Brute-force Login Attempts (>50 Failed)",
+  "description": "Phát hiện đăng nhập lỗi quá 50 lần từ một IP nguồn",
+  "query": "event.category: \"authentication\" and event.outcome: \"failure\"",
+  "threshold": {
+    "field": ["source.ip"],
+    "value": 5
+  },
+  "index": ["winlogbeat-*", "logs-endpoint.events.*"],
+  "severity": "high",
+  "interval": "1m",
+  "from": "now-120s",
+  "risk_score": 70,
+  "metadata": {
+    "owner": {
+      "team": "Detection Engineering",
+      "primary_contact": "soc-detection@local",
+      "slack_channel": "#soc-detections"
+    },
+    "status": "testing",
+    "severity": "high",
+    "risk_score": 70,
+    "attack": {
+      "tactics": ["credential_access"],
+      "techniques": ["T1110"]
+    },
+    "data_sources": [
+      {
+        "product": "windows",
+        "source": "authentication",
+        "required": true,
+        "notes": "Need authentication failures with source.ip."
+      }
+    ],
+    "log_requirements": [
+      {
+        "field": "source.ip",
+        "why": "Needed for threshold grouping."
+      },
+      {
+        "field": "event.outcome",
+        "why": "Needed to restrict to failed logons."
+      }
+    ],
+    "false_positive_scenarios": [
+      "Approved password spray simulation or vulnerability scanning from known ranges"
+    ],
+    "tuning_notes": [
+      "Whitelist approved scanner IPs and tune threshold per environment segment."
+    ],
+    "triage": {
+      "entities": ["source.ip", "host.name", "user.name"],
+      "priority_questions": [
+        "Is the source IP internal, VPN or external?",
+        "Was there a subsequent successful authentication from the same source?"
+      ],
+      "enrichment_queries": [
+        "Search same source.ip across 24h of authentication logs",
+        "Check IP reputation or CMDB ownership"
+      ]
+    },
+    "response_playbook": {
+      "id": "windows-bruteforce-response",
+      "mode": "semi_auto",
+      "auto_actions": ["create_case", "notify_telegram"]
+    },
+    "validation": {
+      "test_strategy": "Replay failed authentication burst in dev index.",
+      "sample_log_path": "samples/windows/credential_access/authentication/bruteforce.json",
+      "expected_outcome": "Rule triggers when threshold of failed logons is met.",
+      "last_validated_at": "2026-07-10"
+    },
+    "review": {
+      "reviewer": "lead.detection@local",
+      "last_reviewed_at": "2026-07-10",
+      "review_cycle_days": 30
+    },
+    "references_internal": ["KB-DET-BRUTEFORCE-001"]
+  }
+}

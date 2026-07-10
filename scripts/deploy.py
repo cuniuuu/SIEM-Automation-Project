@@ -90,6 +90,7 @@ def append_custom_json_rules(deprecated_ids):
                     rule = json.load(f)
                 
                 if not rule: continue
+                rule.pop('metadata', None)
                 
                 # Bắt buộc ép cấu hình đồng bộ với hệ thống Real-time
                 if 'interval' not in rule:

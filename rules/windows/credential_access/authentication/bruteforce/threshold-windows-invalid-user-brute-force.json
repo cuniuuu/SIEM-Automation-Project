@@ -1,0 +1,83 @@
+{
+  "rule_id": "threshold-windows-invalid-user-brute-force",
+  "type": "threshold",
+  "language": "kuery",
+  "name": "Windows Brute-force targeting Non-Existent Users",
+  "description": "Phát hiện hành vi dò quét, đăng nhập liên tục vào các tài khoản không tồn tại trên hệ thống (SubStatus: 0xc0000064) dựa trên IP nguồn.",
+  "query": "event.category: \"authentication\" and event.outcome: \"failure\" and winlog.event_data.SubStatus: \"0xc0000064\"",
+  "threshold": {
+    "field": ["source.ip"],
+    "value": 5
+  },
+  "index": ["winlogbeat-*", "logs-endpoint.events.*"],
+  "interval": "5m",
+  "from": "now-600s",
+  "severity": "high",
+  "risk_score": 75,
+  "metadata": {
+    "owner": {
+      "team": "Detection Engineering",
+      "primary_contact": "soc-detection@local",
+      "slack_channel": "#soc-detections"
+    },
+    "status": "testing",
+    "severity": "high",
+    "risk_score": 75,
+    "attack": {
+      "tactics": ["credential_access"],
+      "techniques": ["T1110.003"]
+    },
+    "data_sources": [
+      {
+        "product": "windows",
+        "source": "authentication",
+        "required": true,
+        "notes": "Need SubStatus and source.ip fields for non-existent user detection."
+      }
+    ],
+    "log_requirements": [
+      {
+        "field": "winlog.event_data.SubStatus",
+        "why": "Used to identify invalid-user failures."
+      },
+      {
+        "field": "source.ip",
+        "why": "Needed for threshold grouping."
+      }
+    ],
+    "false_positive_scenarios": [
+      "Misconfigured application or approved username enumeration testing"
+    ],
+    "tuning_notes": [
+      "Exclude known application sources that repeatedly attempt stale usernames."
+    ],
+    "triage": {
+      "entities": ["source.ip", "host.name"],
+      "priority_questions": [
+        "Is this source probing multiple non-existent accounts?",
+        "Did the same IP later target valid usernames?"
+      ],
+      "enrichment_queries": [
+        "Search same source.ip across all failed logons in the last 24h",
+        "Check network ownership and reputation of source.ip"
+      ]
+    },
+    "response_playbook": {
+      "id": "windows-invalid-user-bruteforce-response",
+      "mode": "semi_auto",
+      "auto_actions": ["create_case", "notify_telegram"]
+    },
+    "validation": {
+      "test_strategy": "Replay invalid-user authentication failures in dev index.",
+      "sample_log_path": "samples/windows/credential_access/authentication/invalid_user_bruteforce.json",
+      "expected_outcome": "Rule triggers when invalid-user threshold is met.",
+      "last_validated_at": "2026-07-10"
+    },
+    "review": {
+      "reviewer": "lead.detection@local",
+      "last_reviewed_at": "2026-07-10",
+      "review_cycle_days": 30
+    },
+    "references_internal": ["KB-DET-BRUTEFORCE-002"]
+  }
+}

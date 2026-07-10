@@ -1,0 +1,90 @@
+title: Firewall Disabled via Netsh.EXE
+id: 57c4bf16-227f-4394-8ec7-1b745ee061c3
+status: test
+description: Detects netsh commands that turns off the Windows firewall
+references:
+- https://www.winhelponline.com/blog/enable-and-disable-windows-firewall-quickly-using-command-line/
+- https://app.any.run/tasks/210244b9-0b6b-4a2c-83a3-04bd3175d017/
+- https://github.com/redcanaryco/atomic-red-team/blob/f339e7da7d05f6057fdfcdd3742bfcf365fee2a9/atomics/T1562.004/T1562.004.md#atomic-test-1---disable-microsoft-defender-firewall
+author: Fatih Sirin
+date: 2019-11-01
+modified: 2023-02-13
+tags:
+- attack.defense-evasion
+- attack.t1562.004
+- attack.s0108
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection_img:
+  - Image|endswith: \netsh.exe
+  - OriginalFileName: netsh.exe
+  selection_cli_1:
+    CommandLine|contains|all:
+    - firewall
+    - set
+    - opmode
+    - disable
+  selection_cli_2:
+    CommandLine|contains|all:
+    - advfirewall
+    - set
+    - state
+    - 'off'
+  condition: selection_img and 1 of selection_cli_*
+falsepositives:
+- Legitimate administration activity
+level: medium
+x_metadata:
+  owner:
+    team: Detection Engineering
+    primary_contact: soc-detection@local
+    slack_channel: "#soc-detections"
+  status: testing
+  severity: medium
+  risk_score: 65
+  attack:
+    tactics:
+    - defense_evasion
+    techniques:
+    - T1562.004
+  data_sources:
+  - product: windows
+    source: process_creation
+    required: true
+    notes: Need full netsh command line.
+  log_requirements:
+  - field: process.command_line
+    why: Required to detect firewall disable action.
+  false_positive_scenarios:
+  - Authorized security hardening or troubleshooting by administrators.
+  tuning_notes:
+  - Exclude approved change windows and management hosts where possible.
+  triage:
+    entities:
+    - host.name
+    - user.name
+    - process.command_line
+    priority_questions:
+    - Was the host under maintenance or change approval?
+    - Did inbound or outbound suspicious traffic follow the change?
+    enrichment_queries:
+    - Search for related service stop or registry tamper events on the same host.
+  response_playbook:
+    id: windows-firewall-disable-response
+    mode: semi_auto
+    auto_actions:
+    - create_case
+    - notify_telegram
+  validation:
+    test_strategy: Replay netsh firewall disable sample in dev.
+    sample_log_path: samples/windows/defense_evasion/process_creation/netsh_fw_disable.json
+    expected_outcome: Rule triggers on firewall disabling commands.
+    last_validated_at: 2026-07-10
+  review:
+    reviewer: lead.detection@local
+    last_reviewed_at: 2026-07-10
+    review_cycle_days: 30
+  references_internal:
+  - KB-DET-NETSH-001

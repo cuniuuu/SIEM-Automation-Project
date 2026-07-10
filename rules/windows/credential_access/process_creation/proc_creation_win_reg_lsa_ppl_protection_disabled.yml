@@ -1,0 +1,82 @@
+title: LSA PPL Protection Disabled Via Reg.EXE
+id: 8c0eca51-0f88-4db2-9183-fdfb10c703f9
+status: test
+description: Detects the usage of the "reg.exe" utility to disable PPL protection on the LSA process
+references:
+    - https://thedfirreport.com/2022/03/21/apt35-automates-initial-access-using-proxyshell/
+author: Florian Roth (Nextron Systems)
+date: 2022-03-22
+modified: 2023-03-26
+tags:
+    - attack.defense-evasion
+    - attack.t1562.010
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection_img:
+        - Image|endswith: '\reg.exe'
+        - OriginalFileName: 'reg.exe'
+    selection_cli:
+        CommandLine|contains: 'SYSTEM\CurrentControlSet\Control\Lsa'
+        CommandLine|contains|all:
+            - ' add '
+            - ' /d 0'
+            - ' /v RunAsPPL '
+    condition: all of selection_*
+falsepositives:
+    - Unlikely
+level: high
+x_metadata:
+  owner:
+    team: Detection Engineering
+    primary_contact: soc-detection@local
+    slack_channel: "#soc-detections"
+  status: testing
+  severity: high
+  risk_score: 80
+  attack:
+    tactics:
+    - credential_access
+    techniques:
+    - T1003
+  data_sources:
+  - product: windows
+    source: process_creation
+    required: true
+    notes: Need reg.exe command line and target path.
+  log_requirements:
+  - field: process.command_line
+    why: Needed to detect LSA protection tampering.
+  false_positive_scenarios:
+  - Rare hardening rollback or compatibility troubleshooting.
+  tuning_notes:
+  - Restrict to approved maintenance users if a benign pattern exists.
+  triage:
+    entities:
+    - host.name
+    - user.name
+    - process.command_line
+    priority_questions:
+    - Did LSASS access or dump activity follow this registry change?
+    - Is this a sensitive server or admin workstation?
+    enrichment_queries:
+    - Search same host for LSASS dump or credential theft behaviors within 1h.
+  response_playbook:
+    id: windows-lsa-protection-disable-response
+    mode: semi_auto
+    auto_actions:
+    - create_case
+    - notify_telegram
+  validation:
+    test_strategy: Replay registry tamper event targeting LSA protection settings.
+    sample_log_path: samples/windows/credential_access/process_creation/lsa_ppl_disable.json
+    expected_outcome: Rule triggers on disabling LSA PPL protection.
+    last_validated_at: 2026-07-10
+  review:
+    reviewer: lead.detection@local
+    last_reviewed_at: 2026-07-10
+    review_cycle_days: 21
+  references_internal:
+  - KB-DET-LSA-001
+##

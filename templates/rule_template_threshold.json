@@ -1,0 +1,84 @@
+{
+  "rule_id": "threshold-example-rule",
+  "type": "threshold",
+  "language": "kuery",
+  "name": "Example Threshold Rule",
+  "description": "Example Kibana threshold rule template with operational metadata.",
+  "query": "event.category: \"authentication\" and event.outcome: \"failure\"",
+  "threshold": {
+    "field": ["source.ip"],
+    "value": 5
+  },
+  "index": ["winlogbeat-*"],
+  "interval": "1m",
+  "from": "now-120s",
+  "severity": "high",
+  "risk_score": 70,
+  "enabled": true,
+  "metadata": {
+    "owner": {
+      "team": "Detection Engineering",
+      "primary_contact": "soc-detection@local",
+      "slack_channel": "#soc-detections"
+    },
+    "status": "testing",
+    "severity": "high",
+    "risk_score": 70,
+    "attack": {
+      "tactics": ["credential_access"],
+      "techniques": ["T1110"]
+    },
+    "data_sources": [
+      {
+        "product": "windows",
+        "source": "winlogbeat",
+        "required": true,
+        "notes": "Need authentication failures with source.ip populated."
+      }
+    ],
+    "log_requirements": [
+      {
+        "field": "source.ip",
+        "why": "Needed for threshold grouping."
+      },
+      {
+        "field": "event.outcome",
+        "why": "Needed to separate failures from successes."
+      }
+    ],
+    "false_positive_scenarios": [
+      "Vulnerability scanner or password spray simulation in approved ranges"
+    ],
+    "tuning_notes": [
+      "Whitelist known security testing ranges."
+    ],
+    "triage": {
+      "entities": ["source.ip", "host.name", "user.name"],
+      "priority_questions": [
+        "Is this source IP internal, VPN or external?",
+        "Did any success event follow the failure burst?"
+      ],
+      "enrichment_queries": [
+        "Search same source.ip over 24h",
+        "Check IP reputation"
+      ]
+    },
+    "response_playbook": {
+      "id": "windows-bruteforce-response",
+      "mode": "semi_auto",
+      "auto_actions": ["create_case", "notify_telegram"]
+    },
+    "validation": {
+      "test_strategy": "Replay failed login samples in dev index.",
+      "sample_log_path": "samples/windows/authentication/bruteforce.json",
+      "expected_outcome": "Trigger when threshold is met.",
+      "last_validated_at": "2026-07-10"
+    },
+    "review": {
+      "reviewer": "lead.detection@local",
+      "last_reviewed_at": "2026-07-10",
+      "review_cycle_days": 30
+    },
+    "references_internal": ["KB-DET-010"]
+  }
+}

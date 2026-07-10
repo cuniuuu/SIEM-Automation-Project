@@ -7,3 +7,4 @@ elasticsearch
 python-dateutil
 python-dotenv
 urllib3
+jsonschema

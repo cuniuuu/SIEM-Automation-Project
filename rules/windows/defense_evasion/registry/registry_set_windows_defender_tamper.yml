@@ -1,0 +1,98 @@
+title: Disable Windows Defender Functionalities Via Registry Keys
+id: 0eb46774-f1ab-4a74-8238-1155855f2263
+status: test
+description: Detects when attackers disable Windows Defender functionalities via registry using PowerShell or Reg.exe (Mapped to ECS fields)
+author: Test
+date: 2022-08-01
+modified: 2026-04-06
+tags:
+    - attack.defense-evasion
+    - attack.t1562.001
+logsource:
+    product: windows
+    category: registry_set
+detection:
+    # 1. Thay TargetObject bằng registry.path (Theo đúng log ELK của bạn)
+    selection_main:
+        registry.path|contains:
+            - '\SOFTWARE\Microsoft\Windows Defender'
+            - '\SOFTWARE\Policies\Microsoft\Windows Defender'
+    
+    # 2. Kiểm tra tên các Key bị tác động
+    selection_keys:
+        registry.path|endswith:
+            - '\DisableAntiSpyware'
+            - '\DisableAntiVirus'
+            - '\DisableRealtimeMonitoring'
+            - '\DisableBehaviorMonitoring'
+            - '\DisableOnAccessProtection'
+            - '\Features\TamperProtection'
+
+    # 3. Thay Details bằng registry.data.strings
+    # PowerShell 'Value 1' sẽ được Sysmon/ELK ghi nhận là "DWORD (0x00000001)" hoặc đơn giản là "1"
+    selection_value:
+        registry.data.strings|contains:
+            - '1'
+            - '0x00000001'
+            - 'DWORD'
+
+    condition: selection_main and selection_keys and selection_value
+falsepositives:
+    - Administrator actions
+    - Third party Antivirus installation
+level: high
+x_metadata:
+  owner:
+    team: Detection Engineering
+    primary_contact: soc-detection@local
+    slack_channel: "#soc-detections"
+  status: testing
+  severity: high
+  risk_score: 80
+  attack:
+    tactics:
+    - defense_evasion
+    techniques:
+    - T1562.001
+  data_sources:
+  - product: windows
+    source: registry
+    required: true
+    notes: Need registry path and value visibility.
+  log_requirements:
+  - field: registry.path
+    why: Needed to identify tampering target.
+  - field: registry.data.strings
+    why: Useful to confirm disabling action.
+  false_positive_scenarios:
+  - Approved troubleshooting or policy testing by security administrators.
+  tuning_notes:
+  - Limit exclusions to managed hardening workflows with change control.
+  triage:
+    entities:
+    - host.name
+    - user.name
+    - registry.path
+    priority_questions:
+    - Did Defender services stop or protections disable around the same time?
+    - Is the host high-value or internet-facing?
+    enrichment_queries:
+    - Search same host for other defense evasion signals in the last hour.
+  response_playbook:
+    id: windows-defender-tamper-response
+    mode: semi_auto
+    auto_actions:
+    - create_case
+    - notify_telegram
+  validation:
+    test_strategy: Replay registry modification targeting Defender disable keys.
+    sample_log_path: samples/windows/defense_evasion/registry/defender_tamper.json
+    expected_outcome: Rule triggers on suspicious Defender registry tampering.
+    last_validated_at: 2026-07-10
+  review:
+    reviewer: lead.detection@local
+    last_reviewed_at: 2026-07-10
+    review_cycle_days: 21
+  references_internal:
+  - KB-DET-DEFENDER-001
+###
